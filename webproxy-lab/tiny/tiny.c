@@ -46,29 +46,35 @@ int main(int argc, char **argv) // [argc] 실행될때 전딜된 인자의 개�
 
 void doit(int fd)
 {
-  int is_static;
-  struct stat sbuf;
+  int is_static; // 요청이 정적(1) 인지 동적(0) 인지 저장할 플래그 변수
+  struct stat sbuf; // 함수를 통해 얻어온 파일의 정보를 저장할 구조체
   char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-  char filename[MAXLINE], cgiargs[MAXLINE];
-  rio_t rio;
+  // buf 는 소켓에서 데이터를 읽어올 때 사용할 임시 버퍼
+  // method, uri, version 은 HTTP 요청 라인에서 파싱한 각 부분을 저장할 문자열 버퍼
+  char filename[MAXLINE], cgiargs[MAXLINE]; // uri 를 분석한 후 실제 파일 경로와 CGI 인자를 저장할 버퍼
+  rio_t rio; // 안정적인 입출력(Robust I/O)을 위한 RIO 구조체
 
-  Rio_readinitb(&rio, fd);
-  Rio_readlineb(&rio, buf, MAXLINE);
-  printf("Request headers: \n");
+  // 요청 라인 읽기 및 파싱
+  Rio_readinitb(&rio, fd); // RIO 읽기 구조체(rio)를 초기화하고, fd(연결 소켓)와 연결한다. 이제 rio 를 통해 fd 에서 데이터를 읽을 수 있다
+  Rio_readlineb(&rio, buf, MAXLINE); // 클라이언트가 보낸 HTTP 요청의 첫 번째 줄을 \n 문자를 만날 때까지 읽어서 buf 에 저장
+  printf("Request headers: \n"); // 방금 읽은 요청 라인을 출력
   printf("%s", buf);
-  sscanf(buf, "%s %s %s", method, uri, version);
-  if (strcasecmp(method, "GET")) {
+  sscanf(buf, "%s %s %s", method, uri, version); // buf 에 저장된 문자열을 공백을 기준으로 세 부분으로 나누어, 각각 method, uri, version 변수에 저장
+  if (strcasecmp(method, "GET")) { // method가 "GET" 인지 대소문자 구분 없이 비교
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
+    // 메서드가 GET 이 아니라면 (예: POST), clienterror 함수를 호출하여 클라에게 501 (구현안됨) 오류 응답을 보내고 doit 함수 종료
     return;
   }
   read_requesthdrs(&rio);
+  // 메서드가 GET 인 경우 요청 라인 다음에 오는 HTTP 헤더들을 읽는다.
 
-  is_static = parse_uri(uri, filename, cgiargs);
-  if (stat(filename, &sbuf) < 0) {
-    clienterror(fd, filename, "404", "Not found", "Tiny couldn't find this file");
+  is_static = parse_uri(uri, filename, cgiargs); // parse_uri 함수가 uri(예: "/index.html") 를 분석한다
+  if (stat(filename, &sbuf) < 0) { // stat 함수를 사용해 filename 에 해당하는 파일이 디스크에 실제로 존재하는지 확인히고, 파일이 있다면 그 정보를 sbuf 구조체에 채움
+    clienterror(fd, filename, "404", "Not found", "Tiny couldn't find this file"); // 파일이 존재하지 않을때 요청 처리
     return;
   }
 
+  // 정적/동적 콘텐츠 분기 처리
   if (is_static) {
     if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {
       clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read this file");
@@ -83,4 +89,30 @@ void doit(int fd)
     }
     serve_dynamic(fd, filename, cgiargs);
   }
+}
+
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg)
+{
+  char buf[MAXLINE], body[MAXLINE];
+
+  // 'body' 버퍼에 HTML 문자열을 순차적으로 조립합니다.
+  sprintf(body, "<html><title>Tiny Error</title>");
+  sprintf(body, "%s<body bgcolor=""ffffff"">\r\n", body); // 기존 body 내용에 덧붙임
+  sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg); // 예: 404: Not Found
+  sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
+  sprintf(body, "%s<hr><em>The Tiny Web Server</em>\r\n", body); // 하단 푸터
+
+  // (1) HTTP 상태 라인 전송
+  sprintf(buf, "HTTP/1.0 %s %s \r\n", errnum, shortmsg);
+  Rio_writen(fd, buf, strlen(buf));
+
+  // (2) HTTP 헤더 전송
+  sprintf(buf, "Content-Type: text/html\r\n");
+  Rio_writen(fd, buf, strlen(buf));
+  
+  sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body)); // 헤더의 끝(\r\n\r\n)
+  Rio_writen(fd, buf, strlen(buf));
+
+  // (3) HTTP 본문 (앞서 만든 HTML) 전송
+  Rio_writen(fd, body, strlen(body));
 }
