@@ -1,7 +1,15 @@
 <html>
-<head><title>test</title></head>
+<head><title>Video Test</title></head>
+<link href="https://vjs.zencdn.net/8.3.0/video-js.css" rel="stylesheet" />
+<script src="https://vjs.zencdn.net/8.3.0/video.min.js"></script>
 <body> 
-<img align="middle" src="godzilla.gif">
-Dave O'Hallaron
+
+<video id="my-video" class="video-js" controls preload="auto" width="540" height="960" data-setup='{}'>
+  <source src="http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type='video/mp4'>
+  <p class="vjs-no-js">
+    지원하는 브라우저에서 이 비디오를 보려면 JavaScript를 활성화하고 HTML5 비디오를 지원하도록 업그레이드해야 합니다.
+  </p>
+</video>
+
 </body>
 </html>
